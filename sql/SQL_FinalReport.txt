@@ -1,5 +1,8 @@
--- ФИНАЛЬНЫЙ ПРОЕКТ --
 
+-- Курс-тренажер по SQL --
+--   ФИНАЛЬНЫЙ ПРОЕКТ --
+
+-- выполнил Юшманов В.А.
 
 /* -- Задание 1 --
 -------------------------------------------------------------------------------------------------------
@@ -224,14 +227,16 @@ order by 5 desc
 
 Когорта какого месяца показывает максимальную «раскрываемость» (т.е. суммарную конверсию 
 в оплату по всем месяцам)? Учитывайте только месяцы, где было 100 и больше регистраций.
--------------------------------------------------------------------------------------------------------*/
--- Используем код из решения задания 5, исключив фильтрование по количеству новых 
+-------------------------------------------------------------------------------------------------------
+Используем код из решения задания 5, исключив фильтрование по количеству новых 
 регистраций и соответствию месяцев регистрации и покупки:
-/* "having fin_reg.count_reg >= 100
-    	and date_trunc('month', us.created_at) = date_trunc('month', ct.purchased_at)"*/
--- ответ: 2016-06
--- файл доступен по ссылке: 
+	"having fin_reg.count_reg >= 100
+    		and date_trunc('month', us.created_at) = date_trunc('month', ct.purchased_at)"
+ответ: 2016-06
+файл доступен по ссылке: 
 https://docs.google.com/spreadsheets/d/1uuxPkcFALGnYlzAGV0T-8wqywHq7Nrp6eCJVyA3lPq0/edit?usp=sharing
+вкладка: "Conversion_RUS"
+*/
 
 
 /* -- Задание 7 --
@@ -244,11 +249,11 @@ https://docs.google.com/spreadsheets/d/1uuxPkcFALGnYlzAGV0T-8wqywHq7Nrp6eCJVyA3l
 	"having fin_reg.count_reg >= 100
     		and date_trunc('month', us.created_at) = date_trunc('month', ct.purchased_at)"
 
--- ответы:
+ответы:
 	* пользователи не из России по когортам некоторых месяцев показывают намного более лучшие конверсии
 	* по пользователям не из России в среднем конверсия в покупку хуже
 	* данных для сравнения конверсий недостаточно
--- файл доступен по ссылке: 
+Расчеты представлены на вкладке "Comparsion" файла: 
 https://docs.google.com/spreadsheets/d/1uuxPkcFALGnYlzAGV0T-8wqywHq7Nrp6eCJVyA3lPq0/edit?usp=sharing
 */
 
@@ -258,70 +263,8 @@ https://docs.google.com/spreadsheets/d/1uuxPkcFALGnYlzAGV0T-8wqywHq7Nrp6eCJVyA3l
 По пользователям из России посчитайте «раскрываемость» до конца календарного года когорт 2017 и 2018 года. 
 По когорте каждого месяца 2018 года посчитайте рост относительно того же месяца 2017 года. 
 Какой усреднённый рост получился за месяцы с января по июнь? 
-----------------------------------------------------------------------------------------------------------*/
-with 
-    cn as ( select cn.id from case10.countries cn where cn.country_code = 'RU' ),
-    rg as ( select rg.id from case10.regions rg where exists 
-    		( select * from cn where rg.country_id = cn.id ) ),
-    ct as ( select ct.id from case10.cities ct where exists 
-            ( select * from rg where ct.region_id = rg.id ) ),
-    ad as ( select ad.addressable_id from case10.addresses ad where exists 
-            ( select * from ct where ad.city_id = ct.id ) ),
-    -- русские адреса
-    rus_adr as ( select us.id, us.created_at as create_date from case10.users us where exists 
-            ( select * from ad where us.id = ad.addressable_id) ),
-    flt_phn as ( select us.phone from case10.users us where us.phone::text ~* '^(79|73|74|78)\d+$' ),
-    -- русские телефоны
-    rus_phn as ( select us.id, us.created_at as create_date from case10.users us where us.phone is not null and exists
-            ( select * from flt_phn fp where fp.phone = us.phone ) ),
-    rus_lim_ip as ( select loc.ip_from, loc.ip_to from case10.ip2location_db1 loc where loc.country_code = 'RU' ),
-    fin_ip as ( select id,
-                        substring(last_sign_in_ip, '(\d*)\.')::bigint*256*256*256 
-                        + substring(last_sign_in_ip, '\d*\.(\d*)')::bigint*256*256 
-                        + substring(last_sign_in_ip, '\d*\.\d*\.(\d*)')::bigint*256 
-                        + substring(last_sign_in_ip, '\d*\.\d*\.\d*\.(\d*)')::bigint as user_ip, -- ip пересчитан
-                        created_at as create_date -- дата создания  
-                from case10.users ),
-    -- русские ip
-    rus_ip as ( select id, create_date from fin_ip as f where exists 
-            ( select * from rus_lim_ip where f.user_ip between rus_lim_ip.ip_from and rus_lim_ip.ip_to ) ),
-    -- все русские пользователи 
-    rus_all as (    select id, create_date, extract(year from create_date)||'.'||extract(month from create_date) as ym_create_date
-                    from (  select * from rus_adr
-                            union 
-                            select * from rus_phn
-                            union 
-                            select * from rus_ip ) as a ),
-    -- количество новых регистраций русских пользователей по месяцам
-    fin_reg as (   select 
-                        date_trunc('year', us.created_at) as year,
-                        count(id) as count_reg
-                    from case10.users us
-                    where exists (select * from rus_all where id = us.id)
-                    group by 1)
-select 
-    date_trunc('year', us.created_at) as reg_year,
-    fin_reg.count_reg as users,
-    date_trunc('year', ct.purchased_at) as purch_year,
-    count(distinct ct.id) as carts,
-    count(distinct ct.id)*1.0/fin_reg.count_reg as convers
-from case10.users us 
-    join fin_reg on fin_reg.year = date_trunc('year', us.created_at)
-        join case10.carts ct on ct.user_id = us.id and ct.state = 'successful'
-where exists (select * from rus_all where id = us.id) 
-group by 1,2,3
-having date_trunc('year', us.created_at) = date_trunc('year', ct.purchased_at)
-order by 1 desc
-offset 1
-limit 2
--- ответ 1: конверсия 2017 - 13%; конверсия 2018 - 21%
-
-
-
--- ответы:
-	* пользователи не из России по когортам некоторых месяцев показывают намного более лучшие конверсии
-	* по пользователям не из России в среднем конверсия в покупку хуже
-	* данных для сравнения конверсий недостаточно
--- файл доступен по ссылке: 
+----------------------------------------------------------------------------------------------------------
+Расчет опубликован на вкладке "Trends 2017->2018" файла
 https://docs.google.com/spreadsheets/d/1uuxPkcFALGnYlzAGV0T-8wqywHq7Nrp6eCJVyA3lPq0/edit?usp=sharing
+ответ 1.15
 */
